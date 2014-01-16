@@ -1,0 +1,10 @@
+[
+	{
+		"id":"host",
+		"label":"IP address or hostname + port of PMS machine",
+		"type":"text",
+		"default":"localhost:32400"
+	}
+
+
+]
