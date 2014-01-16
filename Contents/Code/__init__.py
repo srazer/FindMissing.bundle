@@ -17,7 +17,7 @@ import time
 VERSION = ' V0.0.1'
 NAME = 'FindMissing'
 ART = 'art-default.jpg'
-ICON = 'icon-FindUnmatched.png'
+ICON = 'icon-FindMissing.png'
 PREFIX = '/applications/findMissing'
 
 myPathList = {}			# Contains dict of section keys and file-path
