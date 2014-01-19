@@ -14,7 +14,7 @@ import urllib
 import io
 import time
 
-VERSION = ' V0.0.1'
+VERSION = ' V0.0.2'
 NAME = 'FindMissing'
 ART = 'art-default.jpg'
 ICON = 'icon-FindMissing.png'
@@ -56,13 +56,12 @@ def MainMenu(random=0):
 		sections = XML.ElementFromURL(PMS_URL).xpath('//Directory')
 		for section in sections:
 			sectiontype = section.get('type')
-			if sectiontype != "photo":
-				title = section.get('title')
-				key = section.get('key')
-				paths = section.xpath('Location/@path')
-				Log.Debug("Title of section is %s with a key of %s and a path of : %s" %(title, key, paths))
-				myPathList[key]= ', '.join(paths)
-				oc.add(DirectoryObject(key=Callback(backgroundScan, title=title, sectiontype=sectiontype, key=key, random=time.clock()), title='Look in section "' + title + '"', summary='Look for unmatched files in "' + title + '"'))
+			title = section.get('title')
+			key = section.get('key')
+			paths = section.xpath('Location/@path')
+			Log.Debug("Title of section is %s with a key of %s and a path of : %s" %(title, key, paths))
+			myPathList[key]= ', '.join(paths)
+			oc.add(DirectoryObject(key=Callback(backgroundScan, title=title, sectiontype=sectiontype, key=key, random=time.clock()), title='Look in section "' + title + '"', summary='Look for unmatched files in "' + title + '"'))
 	except:
 		Log.Critical("Exception happened in MainMenu")
 		raise
@@ -145,10 +144,40 @@ def scanMovieDB(myMediaURL):
 			for myTmpPath in myTmpPaths:
 				filename = urllib.unquote(myTmpPath).decode('utf8')
 				composed_filename = unicodedata.normalize('NFKC', filename)
-				myFilePath = urllib.quote(composed_filename.encode('utf8'))
-				# Remove esc backslash if present and on Windows
-				if Platform.OS == "Windows":
-					myFilePath = myFilePath.replace(':%5C%5C', ':%5C')
+				bScanStatusCount += 1
+				if os.path.exists(filename):
+					Log.Debug("Media #%s from database: '%s' exists with a path of: %s" %(bScanStatusCount, title, composed_filename))
+				else:
+					Log.Debug("Media #%s from database: '%s' is missing with a path of: %s" %(bScanStatusCount, title, composed_filename))
+					myResults.append(composed_filename)
+	except:
+		Log.Critical("Detected an exception in scanMovieDB")
+		bScanStatus = 99
+		raise
+	Log.Debug("******* Ending scanMovieDB ***********")
+
+####################################################################################################
+# This function will scan a photo section for missing files.
+####################################################################################################
+@route(PREFIX + '/scanPhotoDB')
+def scanPhotoDB(myMediaURL):
+	Log.Debug("******* Starting scanMovieDB with an URL of %s***********" %(myMediaURL))
+	global myResults
+	global bScanStatusCount
+	global bScanStatusCountOf
+	bScanStatusCount = 0
+	bScanStatusCountOf = 0
+	myResults[:] = []
+	myTmpPath = []
+	try:
+		myMedias = XML.ElementFromURL(myMediaURL).xpath('//Photo')
+		bScanStatusCountOf = len(myMedias)
+		for myMedia in myMedias:
+			title = myMedia.get('title')			
+			myTmpPaths = (',,,'.join(myMedia.xpath('Media/Part/@file')).split(',,,'))
+			for myTmpPath in myTmpPaths:
+				filename = urllib.unquote(myTmpPath).decode('utf8')
+				composed_filename = unicodedata.normalize('NFKC', filename)
 				bScanStatusCount += 1
 				if os.path.exists(filename):
 					Log.Debug("Media #%s from database: '%s' exists with a path of: %s" %(bScanStatusCount, title, composed_filename))
@@ -190,11 +219,6 @@ def scanShowDB(myMediaURL):
 				for myFilePath2 in myFilePath:
 					filename = urllib.unquote(myFilePath2).decode('utf8')
 					composed_filename = unicodedata.normalize('NFKC', filename)
-					myFilePath2 = urllib.quote(composed_filename.encode('utf8'))
-					# Remove esc backslash if present and on Windows
-					# The Colon prevents breaking Windows file shares.
-					if Platform.OS == "Windows":
-						myFilePath2 = myFilePath2.replace(':%5C%5C', ':%5C')
 					if os.path.exists(filename):
 						Log.Debug("Media from database: '%s' exists with a path of: %s" %(title, composed_filename))
 					else:
@@ -233,10 +257,6 @@ def scanArtistDB(myMediaURL):
 				myFilePath = ',,,'.join(myMedia2.xpath('Media/Part/@file'))
 				filename = urllib.unquote(myFilePath).decode('utf8')
 				composed_filename = unicodedata.normalize('NFKC', filename)
-				myFilePath = urllib.quote(composed_filename.encode('utf8'))
-				# Remove esc backslash if present and on Windows
-				if Platform.OS == "Windows":
-					myFilePath = myFilePath.replace(':%5C%5C', ':%5C')
 				if os.path.exists(filename):
 					Log.Debug("Media from database: '%s' exists with a path of: %s" %(title, composed_filename))
 				else:
@@ -337,6 +357,9 @@ def backgroundScanThread(title, key, sectiontype):
 			scanArtistDB(myMediaURL)
 		if sectiontype == "show":
 			scanShowDB(myMediaURL)
+		if sectiontype == "photo":
+			scanPhotoDB(myMediaURL)
+		
 		# Stop scanner on error
 		if bScanStatus >= 90: return
 
