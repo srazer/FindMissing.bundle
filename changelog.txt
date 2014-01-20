@@ -1,3 +1,6 @@
+Version 0.0.3
+-Fix: Won't scan below top folder. Fixes issue #2
+
 Version 0.0.2
 -Add support for photos
 -Remove some code that wasn't needed

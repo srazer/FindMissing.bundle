@@ -14,7 +14,7 @@ import urllib
 import io
 import time
 
-VERSION = ' V0.0.2'
+VERSION = ' V0.0.3'
 NAME = 'FindMissing'
 ART = 'art-default.jpg'
 ICON = 'icon-FindMissing.png'
@@ -166,12 +166,13 @@ def scanPhotoDB(myMediaURL):
 	global bScanStatusCount
 	global bScanStatusCountOf
 	bScanStatusCount = 0
-	bScanStatusCountOf = 0
+	bScanStatusCountOf = 'Unknown'
 	myResults[:] = []
 	myTmpPath = []
 	try:
+# Scan for photos in the root folder
 		myMedias = XML.ElementFromURL(myMediaURL).xpath('//Photo')
-		bScanStatusCountOf = len(myMedias)
+		#bScanStatusCountOf = len(myMedias)
 		for myMedia in myMedias:
 			title = myMedia.get('title')			
 			myTmpPaths = (',,,'.join(myMedia.xpath('Media/Part/@file')).split(',,,'))
@@ -184,6 +185,46 @@ def scanPhotoDB(myMediaURL):
 				else:
 					Log.Debug("Media #%s from database: '%s' is missing with a path of: %s" %(bScanStatusCount, title, composed_filename))
 					myResults.append(composed_filename)
+
+# Scan for photos in subfolders of subfolders?
+		myMedias = XML.ElementFromURL(myMediaURL).xpath('//Directory')
+		#bScanStatusCountOf = len(myMedias)
+		for myMedia in myMedias:
+			bScanStatusCount += 1
+			ratingKey = myMedia.get("ratingKey")
+			myURL = "http://" + host + "/library/metadata/" + ratingKey + "/allLeaves"
+			Log.Debug("Show %s of %s with a RatingKey of %s at myURL: %s" %(bScanStatusCount, bScanStatusCountOf, ratingKey, myURL))
+			myMedias2 = XML.ElementFromURL(myURL).xpath('//Photo')
+			for myMedia2 in myMedias2:
+				title = myMedia2.get("grandparentTitle") + "/" + myMedia2.get("title")
+				# Using three commas as one has issues with some filenames.
+				myFilePath = (',,,'.join(myMedia2.xpath('Media/Part/@file')).split(',,,'))
+				for myFilePath2 in myFilePath:
+					filename = urllib.unquote(myFilePath2).decode('utf8')
+					composed_filename = unicodedata.normalize('NFKC', filename)
+					if os.path.exists(filename):
+						Log.Debug("Media from database: '%s' exists with a path of: %s" %(title, composed_filename))
+					else:
+						Log.Debug("Media from database: '%s' is missing with a path of: %s" %(title, composed_filename))
+						myResults.append(composed_filename)
+
+# Scan for photos in subfolders?
+			myURL = "http://" + host + "/library/metadata/" + ratingKey + "/children"
+			Log.Debug("Show %s of %s with a RatingKey of %s at myURL: %s" %(bScanStatusCount, bScanStatusCountOf, ratingKey, myURL))
+			myMedias2 = XML.ElementFromURL(myURL).xpath('//Photo')
+			for myMedia2 in myMedias2:
+				title = myMedia2.get("parentTitle") + "/" + myMedia2.get("title")
+				# Using three commas as one has issues with some filenames.
+				myFilePath = (',,,'.join(myMedia2.xpath('Media/Part/@file')).split(',,,'))
+				for myFilePath2 in myFilePath:
+					filename = urllib.unquote(myFilePath2).decode('utf8')
+					composed_filename = unicodedata.normalize('NFKC', filename)
+					if os.path.exists(filename):
+						Log.Debug("Media from database: '%s' exists with a path of: %s" %(title, composed_filename))
+					else:
+						Log.Debug("Media from database: '%s' is missing with a path of: %s" %(title, composed_filename))
+						myResults.append(composed_filename)
+
 	except:
 		Log.Critical("Detected an exception in scanMovieDB")
 		bScanStatus = 99
