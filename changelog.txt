@@ -1,5 +1,8 @@
+Version 0.0.4
+-Reworked photo scanner. Works correctly now.
+
 Version 0.0.3
--Fix: Won't scan below top folder. Fixes issue #2
+-Fix: Won't scan photos below top folder. Fixes issue #2
 
 Version 0.0.2
 -Add support for photos

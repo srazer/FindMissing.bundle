@@ -14,7 +14,7 @@ import urllib
 import io
 import time
 
-VERSION = ' V0.0.3'
+VERSION = ' V0.0.4'
 NAME = 'FindMissing'
 ART = 'art-default.jpg'
 ICON = 'icon-FindMissing.png'
@@ -161,75 +161,77 @@ def scanMovieDB(myMediaURL):
 ####################################################################################################
 @route(PREFIX + '/scanPhotoDB')
 def scanPhotoDB(myMediaURL):
-	Log.Debug("******* Starting scanMovieDB with an URL of %s***********" %(myMediaURL))
+	Log.Debug("******* Starting scanPhotoDB with an URL of %s***********" %(myMediaURL))
 	global myResults
 	global bScanStatusCount
 	global bScanStatusCountOf
 	bScanStatusCount = 0
-	bScanStatusCountOf = 'Unknown'
+	bScanStatusCountOf = 0
+	bScanStatusFileCount = 0
 	myResults[:] = []
 	myTmpPath = []
+	dirKeys = []
 	try:
-# Scan for photos in the root folder
-		myMedias = XML.ElementFromURL(myMediaURL).xpath('//Photo')
-		#bScanStatusCountOf = len(myMedias)
+	
+	# Get all keys
+		Log.Debug("Getting all folder keys.")
+		# Get all root keys
+		myMedias = XML.ElementFromURL(myMediaURL).xpath('//Directory')
 		for myMedia in myMedias:
-			title = myMedia.get('title')			
+			ratingKey = myMedia.get("ratingKey")
+			dirKeys.append(ratingKey)
+
+		# Scan all dirs for more dir keys
+		for key in dirKeys:
+			myURL = "http://" + host + "/library/metadata/" + key + "/children"
+			myMedias2 = XML.ElementFromURL(myURL).xpath('//Directory')
+			for myMedia2 in myMedias2:
+				ratingKey = myMedia2.get("ratingKey")
+				Log.Debug("Adding key %s" %(ratingKey))
+				dirKeys.append(ratingKey)
+
+		Log.Debug("%s keys found: %s" %(len(dirKeys), dirKeys))
+		bScanStatusCountOf = len(dirKeys) + 1 # +1 to include the root dir
+
+	# Scan for photos
+		Log.Debug("Scanning files.")
+		# Scan photos in root folder
+		bScanStatusCount += 1
+		myMedias = XML.ElementFromURL(myMediaURL).xpath('//Photo')
+		for myMedia in myMedias:
 			myTmpPaths = (',,,'.join(myMedia.xpath('Media/Part/@file')).split(',,,'))
 			for myTmpPath in myTmpPaths:
+				bScanStatusFileCount += 1
 				filename = urllib.unquote(myTmpPath).decode('utf8')
 				composed_filename = unicodedata.normalize('NFKC', filename)
-				bScanStatusCount += 1
 				if os.path.exists(filename):
-					Log.Debug("Media #%s from database: '%s' exists with a path of: %s" %(bScanStatusCount, title, composed_filename))
+					Log.Debug("Media #%s exists with a path of: %s" %(bScanStatusFileCount, composed_filename))
 				else:
-					Log.Debug("Media #%s from database: '%s' is missing with a path of: %s" %(bScanStatusCount, title, composed_filename))
+					Log.Debug("Media #%s is missing with a path of: %s" %(bScanStatusFileCount, composed_filename))
 					myResults.append(composed_filename)
 
-# Scan for photos in subfolders of subfolders?
-		myMedias = XML.ElementFromURL(myMediaURL).xpath('//Directory')
-		#bScanStatusCountOf = len(myMedias)
-		for myMedia in myMedias:
+		# Scan photos in sub folders
+		for key in dirKeys:
 			bScanStatusCount += 1
-			ratingKey = myMedia.get("ratingKey")
-			myURL = "http://" + host + "/library/metadata/" + ratingKey + "/allLeaves"
-			Log.Debug("Show %s of %s with a RatingKey of %s at myURL: %s" %(bScanStatusCount, bScanStatusCountOf, ratingKey, myURL))
-			myMedias2 = XML.ElementFromURL(myURL).xpath('//Photo')
-			for myMedia2 in myMedias2:
-				title = myMedia2.get("grandparentTitle") + "/" + myMedia2.get("title")
-				# Using three commas as one has issues with some filenames.
-				myFilePath = (',,,'.join(myMedia2.xpath('Media/Part/@file')).split(',,,'))
-				for myFilePath2 in myFilePath:
-					filename = urllib.unquote(myFilePath2).decode('utf8')
+			myURL = "http://" + host + "/library/metadata/" + key + "/children"
+			myMedias = XML.ElementFromURL(myURL).xpath('//Photo')
+			for myMedia in myMedias:
+				myTmpPaths = (',,,'.join(myMedia.xpath('Media/Part/@file')).split(',,,'))
+				for myTmpPath in myTmpPaths:
+					bScanStatusFileCount += 1
+					filename = urllib.unquote(myTmpPath).decode('utf8')
 					composed_filename = unicodedata.normalize('NFKC', filename)
 					if os.path.exists(filename):
-						Log.Debug("Media from database: '%s' exists with a path of: %s" %(title, composed_filename))
+						Log.Debug("Media #%s exists with a path of: %s" %(bScanStatusFileCount, composed_filename))
 					else:
-						Log.Debug("Media from database: '%s' is missing with a path of: %s" %(title, composed_filename))
-						myResults.append(composed_filename)
-
-# Scan for photos in subfolders?
-			myURL = "http://" + host + "/library/metadata/" + ratingKey + "/children"
-			Log.Debug("Show %s of %s with a RatingKey of %s at myURL: %s" %(bScanStatusCount, bScanStatusCountOf, ratingKey, myURL))
-			myMedias2 = XML.ElementFromURL(myURL).xpath('//Photo')
-			for myMedia2 in myMedias2:
-				title = myMedia2.get("parentTitle") + "/" + myMedia2.get("title")
-				# Using three commas as one has issues with some filenames.
-				myFilePath = (',,,'.join(myMedia2.xpath('Media/Part/@file')).split(',,,'))
-				for myFilePath2 in myFilePath:
-					filename = urllib.unquote(myFilePath2).decode('utf8')
-					composed_filename = unicodedata.normalize('NFKC', filename)
-					if os.path.exists(filename):
-						Log.Debug("Media from database: '%s' exists with a path of: %s" %(title, composed_filename))
-					else:
-						Log.Debug("Media from database: '%s' is missing with a path of: %s" %(title, composed_filename))
+						Log.Debug("Media #%s is missing with a path of: %s" %(bScanStatusFileCount, composed_filename))
 						myResults.append(composed_filename)
 
 	except:
-		Log.Critical("Detected an exception in scanMovieDB")
+		Log.Critical("Detected an exception in scanPhotoDB")
 		bScanStatus = 99
 		raise
-	Log.Debug("******* Ending scanMovieDB ***********")
+	Log.Debug("******* Ending scanPhotoDB ***********")
 
 ####################################################################################################
 # This function will scan a TV-Show section for missing files.
@@ -347,7 +349,7 @@ def backgroundScan(title, key, sectiontype, random=0):
 			# Scanning
 			summary = summary + "Looking for missing files. \nScanning " + str(bScanStatusCount) + " of " + str(bScanStatusCountOf) + ". \nPlease wait a few seconds and check the status again."
 			oc2 = ObjectContainer(title1="Scanning " + str(bScanStatusCount) + " of " + str(bScanStatusCountOf) + ".", no_history=True)
-			oc2.add(DirectoryObject(key=Callback(backgroundScan, random=time.clock(), title=title, sectiontype=sectiontype, key=key), title="Looking for missing files. Check Status.", summary=summary))
+			oc2.add(DirectoryObject(key=Callback(backgroundScan, random=time.clock(), title=title, sectiontype=sectiontype, key=key), title="Looking for missing files. Click to refresh status.", summary=summary))
 			oc2.add(DirectoryObject(key=Callback(backgroundScan, random=time.clock(), title=title, sectiontype=sectiontype, key=key), title="Scanning " + str(bScanStatusCount) + " of " + str(bScanStatusCountOf), summary=summary))
 			return oc2
 		elif bScanStatus == 2:
