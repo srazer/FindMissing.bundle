@@ -14,7 +14,7 @@ import urllib
 import io
 import time
 
-VERSION = ' V0.1.0'
+VERSION = ' V0.1.1'
 NAME = 'FindMissing'
 ART = 'art-default.jpg'
 ICON = 'icon-FindMissing.png'
