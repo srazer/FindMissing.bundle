@@ -14,11 +14,14 @@ import urllib
 import io
 import time
 
-VERSION = ' V0.0.4'
+VERSION = ' V0.0.5'
 NAME = 'FindMissing'
 ART = 'art-default.jpg'
 ICON = 'icon-FindMissing.png'
 PREFIX = '/applications/findMissing'
+MYHEADER = {}
+APPGUID = '7608cf36-742b-11e4-8b39-00089b13a1c5'
+DESCRIPTION = 'Show missing files'
 
 myPathList = {}			# Contains dict of section keys and file-path
 myResults = []			# Contains the end results
@@ -30,15 +33,57 @@ initialTimeOut = 10		# When starting a scan, how long in seconds to wait before 
 # Start function
 ####################################################################################################
 def Start():
-	print("********  Started %s on %s  **********" %(NAME  + VERSION, Platform.OS))
+#	print("********  Started %s on %s  **********" %(NAME  + VERSION, Platform.OS))
 	Log.Debug("*******  Started %s on %s  ***********" %(NAME  + VERSION, Platform.OS))
+	global MYHEADER
 	Plugin.AddViewGroup('List', viewMode='List', mediaType='items')
 	ObjectContainer.art = R(ART)
 	ObjectContainer.title1 = NAME  + VERSION
 	ObjectContainer.view_group = 'List'
 	DirectoryObject.thumb = R(ICON)
 	HTTP.CacheTime = 0
-	getPrefs()
+	ValidatePrefs()
+	#CSK getPrefs()
+
+#********** Get token from plex.tv *********
+''' This will return a valid token, that can be used for authenticating if needed, to be inserted into the header '''
+# DO NOT APPEND THE TOKEN TO THE URL...IT MIGHT BE LOGGED....INSERT INTO THE HEADER INSTEAD
+@route(PREFIX + '/getToken')
+def getToken():
+	Log.Debug('Starting to get the token')
+	if Prefs['Authenticate']:
+		# Start by checking, if we already got a token
+		if 'authentication_token' in Dict and Dict['authentication_token'] != 'NuKeMe':
+			Log.Debug('Got a token from local storage')
+			return Dict['authentication_token']
+		else:
+			Log.Debug('Need to generate a token first from plex.tv')
+			userName = Prefs['Plex_User']
+			userPwd = Prefs['Plex_Pwd']
+			myUrl = 'https://plex.tv/users/sign_in.json'
+			# Create the authentication string
+			base64string = String.Base64Encode('%s:%s' % (userName, userPwd))
+			# Create the header
+			MYAUTHHEADER= {}
+			MYAUTHHEADER['X-Plex-Product'] = DESCRIPTION
+			MYAUTHHEADER['X-Plex-Client-Identifier'] = APPGUID
+			MYAUTHHEADER['X-Plex-Version'] = VERSION
+			MYAUTHHEADER['Authorization'] = 'Basic ' + base64string
+			MYAUTHHEADER['X-Plex-Device-Name'] = NAME
+			# Send the request
+			try:
+				httpResponse = HTTP.Request(myUrl, headers=MYAUTHHEADER, method='POST')
+				myToken = JSON.ObjectFromString(httpResponse.content)['user']['authentication_token']
+				Log.Debug('Response from plex.tv was : %s' %(httpResponse.headers["status"]))
+			except:
+				Log.Critical('Exception happend when trying to get a token from plex.tv')
+				Log.Critical('Returned answer was %s' %httpResponse.content)
+				Log.Critical('Status was: %s' %httpResponse.headers) 			
+			Dict['authentication_token'] = myToken
+			Dict.Save()
+	else:
+			Log.Debug('Authentication disabled')
+	#CSK ValidatePrefs()
 
 ####################################################################################################
 # Main menu
@@ -47,13 +92,13 @@ def Start():
 @route(PREFIX + '/MainMenu')
 def MainMenu(random=0):
 	Log.Debug("**********  Starting MainMenu  **********")
-	getPrefs()
+	#CSK getPrefs()
 	oc = ObjectContainer()
 	
 	# Clear the myPathList
 	myPathList.clear
 	try:
-		sections = XML.ElementFromURL(PMS_URL).xpath('//Directory')
+		sections = XML.ElementFromURL(Dict['PMS_URL'], headers=MYHEADER).xpath('//Directory')
 		for section in sections:
 			sectiontype = section.get('type')
 			title = section.get('title')
@@ -72,18 +117,52 @@ def MainMenu(random=0):
 ####################################################################################################
 # Get user settings, and if not existing, get the defaults
 ####################################################################################################
-@route(PREFIX + '/getPrefs')
-def getPrefs():
-	Log.Debug("*********  Starting to get User Prefs  ***************")
-	global host
-	host = Prefs['host']
-	if host.find(':') == -1:
-		host += ':32400'
-	global PMS_URL
-	PMS_URL = 'http://%s/library/sections/' %(host)
-	Log.Debug("PMS_URL is : %s" %(PMS_URL))
-	Log.Debug("*********  Ending get User Prefs  ***************")
-	return
+#CSK
+#@route(PREFIX + '/getPrefs')
+#def getPrefs():
+#	Log.Debug("*********  Starting to get User Prefs  ***************")
+#	global host
+#	host = Prefs['host']
+#	if host.find(':') == -1:
+#		host += ':32400'
+#	global PMS_URL
+#	PMS_URL = 'http://%s/library/sections/' %(host)
+#	Log.Debug("PMS_URL is : %s" %(PMS_URL))
+#	Log.Debug("*********  Ending get User Prefs  ***************")
+#	return
+
+####################################################################################################
+# Called by the framework every time a user changes the prefs
+####################################################################################################
+@route(PREFIX + '/ValidatePrefs')
+def ValidatePrefs():
+#	if Prefs['NukeToken']:
+		# My master wants to nuke the local store
+#		Log.Debug('Removing Token from local storage')
+#		Dict['authentication_token'] = 'NuKeMe'
+#		Dict.Save()
+	# Lets get the token again, in case credentials are switched, or token is deleted
+	global MYHEADER
+	MYHEADER['X-Plex-Token'] = getToken()
+	if Prefs['NukeToken']:
+		Log.Debug('Resetting flag to nuke token')
+		# My master has nuked the local store, so reset the prefs flag
+		myHTTPPrefix = 'http://127.0.0.1:32400/:/plugins/com.plexapp.plugins.findUnmatch/prefs/'
+		myURL = myHTTPPrefix + 'set?NukeToken=0'
+		Log.Debug('Prefs Sending : ' + myURL)
+		HTTP.Request(myURL, immediate=True, headers=MYHEADER)
+	# If the host pref is missing the port, add it.
+	if Prefs['host'].find(':') == -1:
+		host = Prefs['host'] + ':32400'
+		HTTP.Request('http://' + host + '/:/plugins/com.plexapp.plugins.findUnmatch/prefs/set?host=' + host, immediate=True, headers=MYHEADER)
+	Dict['PMS_URL'] = 'http://%s/library/sections/' %(Prefs['host'])
+	# Verify Server
+	try:
+		HTTP.Request('http://' + Prefs['host'], immediate=True)
+		Log.Debug("Host: %s verified successfully" %(Prefs['host']))
+	except:
+		Log.Debug("Unable to reach server: %s resetting to 127.0.0.1:32400" %('http://' + Prefs['host']))
+		HTTP.Request('http://127.0.0.1:32400/:/plugins/com.plexapp.plugins.findUnmatch/prefs/set?host=127.0.0.1:32400', immediate=True, headers=MYHEADER)
 
 ####################################################################################################
 # Display The Results
@@ -136,7 +215,7 @@ def scanMovieDB(myMediaURL):
 	myResults[:] = []
 	myTmpPath = []
 	try:
-		myMedias = XML.ElementFromURL(myMediaURL).xpath('//Video')
+		myMedias = XML.ElementFromURL(myMediaURL, headers=MYHEADER).xpath('//Video')
 		bScanStatusCountOf = len(myMedias)
 		for myMedia in myMedias:
 			title = myMedia.get('title')			
@@ -176,7 +255,7 @@ def scanPhotoDB(myMediaURL):
 	# Get all keys
 		Log.Debug("Getting all folder keys.")
 		# Get all root keys
-		myMedias = XML.ElementFromURL(myMediaURL).xpath('//Directory')
+		myMedias = XML.ElementFromURL(myMediaURL, headers=MYHEADER).xpath('//Directory')
 		for myMedia in myMedias:
 			ratingKey = myMedia.get("ratingKey")
 			dirKeys.append(ratingKey)
@@ -184,7 +263,7 @@ def scanPhotoDB(myMediaURL):
 		# Scan all dirs for more dir keys
 		for key in dirKeys:
 			myURL = "http://" + host + "/library/metadata/" + key + "/children"
-			myMedias2 = XML.ElementFromURL(myURL).xpath('//Directory')
+			myMedias2 = XML.ElementFromURL(myURL, headers=MYHEADER).xpath('//Directory')
 			for myMedia2 in myMedias2:
 				ratingKey = myMedia2.get("ratingKey")
 				Log.Debug("Adding key %s" %(ratingKey))
@@ -197,7 +276,7 @@ def scanPhotoDB(myMediaURL):
 		Log.Debug("Scanning files.")
 		# Scan photos in root folder
 		bScanStatusCount += 1
-		myMedias = XML.ElementFromURL(myMediaURL).xpath('//Photo')
+		myMedias = XML.ElementFromURL(myMediaURL, headers=MYHEADER).xpath('//Photo')
 		for myMedia in myMedias:
 			myTmpPaths = (',,,'.join(myMedia.xpath('Media/Part/@file')).split(',,,'))
 			for myTmpPath in myTmpPaths:
@@ -214,7 +293,7 @@ def scanPhotoDB(myMediaURL):
 		for key in dirKeys:
 			bScanStatusCount += 1
 			myURL = "http://" + host + "/library/metadata/" + key + "/children"
-			myMedias = XML.ElementFromURL(myURL).xpath('//Photo')
+			myMedias = XML.ElementFromURL(myURL, headers=MYHEADER).xpath('//Photo')
 			for myMedia in myMedias:
 				myTmpPaths = (',,,'.join(myMedia.xpath('Media/Part/@file')).split(',,,'))
 				for myTmpPath in myTmpPaths:
@@ -247,14 +326,14 @@ def scanShowDB(myMediaURL):
 	bScanStatusCount = 0
 
 	try:
-		myMedias = XML.ElementFromURL(myMediaURL).xpath('//Directory')
+		myMedias = XML.ElementFromURL(myMediaURL, headers=MYHEADER).xpath('//Directory')
 		bScanStatusCountOf = len(myMedias)
 		for myMedia in myMedias:
 			bScanStatusCount += 1
 			ratingKey = myMedia.get("ratingKey")
 			myURL = "http://" + host + "/library/metadata/" + ratingKey + "/allLeaves"
 			Log.Debug("Show %s of %s with a RatingKey of %s at myURL: %s" %(bScanStatusCount, bScanStatusCountOf, ratingKey, myURL))
-			myMedias2 = XML.ElementFromURL(myURL).xpath('//Video')
+			myMedias2 = XML.ElementFromURL(myURL, headers=MYHEADER).xpath('//Video')
 			for myMedia2 in myMedias2:
 				title = myMedia2.get("grandparentTitle") + "/" + myMedia2.get("title")
 				# Using three commas as one has issues with some filenames.
@@ -284,14 +363,14 @@ def scanArtistDB(myMediaURL):
 	global myResults
 	myResults[:] = []
 	try:
-		myMedias = XML.ElementFromURL(myMediaURL).xpath('//Directory')
+		myMedias = XML.ElementFromURL(myMediaURL, headers=MYHEADER).xpath('//Directory')
 		bScanStatusCountOf = len(myMedias)
 		for myMedia in myMedias:
 			bScanStatusCount += 1
 			ratingKey = myMedia.get("ratingKey")
 			myURL = "http://" + host + "/library/metadata/" + ratingKey + "/allLeaves"
 			Log.Debug("%s of %s with a RatingKey of %s at myURL: %s" %(bScanStatusCount, bScanStatusCountOf, ratingKey, myURL))
-			myMedias2 = XML.ElementFromURL(myURL).xpath('//Track')
+			myMedias2 = XML.ElementFromURL(myURL, headers=MYHEADER).xpath('//Track')
 			for myMedia2 in myMedias2:
 				title = myMedia2.get("grandparentTitle") + "/" + myMedia2.get("title")
 				# This returns a double backslash for every backslash
@@ -390,7 +469,7 @@ def backgroundScanThread(title, key, sectiontype):
 	try:
 		bScanStatus = 1
 		Log.Debug("Section type is %s" %(sectiontype))
-		myMediaURL = PMS_URL + key + "/all"		
+		myMediaURL = Dict['PMS_URL'] + key + "/all"		
 		Log.Debug("Path to medias in section is %s" %(myMediaURL))
 
 		# Scan the database based on the type of section

@@ -1,3 +1,6 @@
+Version 0.0.5
+-Added support for authentication. Required for Plex Home.
+
 Version 0.0.4
 -Reworked photo scanner. Works correctly now.
 
