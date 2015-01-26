@@ -3,7 +3,7 @@
 		"id":"host",
 		"label":"IP address or hostname + port of PMS machine",
 		"type":"text",
-		"default":"127.0.01:32400"
+		"default":"127.0.1:32400"
 	},
 	{
 		"id":"Authenticate",
