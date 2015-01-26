@@ -1,3 +1,10 @@
+Version 0.1.0
+-Fixed TV show scanner.
+-Fixed looking for files that have non ASCII characters. Now looking for filenames using a utf8 string.
+-Cleaned up some old code.
+-Fixed some wording.
+-Tweaked handling the authentication token.
+
 Version 0.0.5
 -Added support for authentication. Required for Plex Home.
 

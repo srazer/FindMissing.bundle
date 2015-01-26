@@ -1,7 +1,7 @@
 ####################################################################################################
 #	This plugin will search the database and look for any missing files
 #
-#	Made by s_razer
+#	Made by srazer
 #	Based on code from Plex-findUnmatched by dane22 and myself
 #
 #
@@ -14,7 +14,7 @@ import urllib
 import io
 import time
 
-VERSION = ' V0.0.5'
+VERSION = ' V0.1.0'
 NAME = 'FindMissing'
 ART = 'art-default.jpg'
 ICON = 'icon-FindMissing.png'
@@ -42,8 +42,8 @@ def Start():
 	ObjectContainer.view_group = 'List'
 	DirectoryObject.thumb = R(ICON)
 	HTTP.CacheTime = 0
+	getToken()
 	ValidatePrefs()
-	#CSK getPrefs()
 
 #********** Get token from plex.tv *********
 ''' This will return a valid token, that can be used for authenticating if needed, to be inserted into the header '''
@@ -53,9 +53,10 @@ def getToken():
 	Log.Debug('Starting to get the token')
 	if Prefs['Authenticate']:
 		# Start by checking, if we already got a token
-		if 'authentication_token' in Dict and Dict['authentication_token'] != 'NuKeMe':
+		if 'authentication_token' in Dict and Dict['authentication_token'] != 'NuKeMe' and Dict['authentication_token'] != '':
 			Log.Debug('Got a token from local storage')
-			return Dict['authentication_token']
+			global MYHEADER
+			MYHEADER['X-Plex-Token'] = Dict['authentication_token']
 		else:
 			Log.Debug('Need to generate a token first from plex.tv')
 			userName = Prefs['Plex_User']
@@ -81,9 +82,11 @@ def getToken():
 				Log.Critical('Status was: %s' %httpResponse.headers) 			
 			Dict['authentication_token'] = myToken
 			Dict.Save()
+			global MYHEADER
+			MYHEADER['X-Plex-Token'] = Dict['authentication_token']
 	else:
 			Log.Debug('Authentication disabled')
-	#CSK ValidatePrefs()
+	ValidatePrefs()
 
 ####################################################################################################
 # Main menu
@@ -92,7 +95,6 @@ def getToken():
 @route(PREFIX + '/MainMenu')
 def MainMenu(random=0):
 	Log.Debug("**********  Starting MainMenu  **********")
-	#CSK getPrefs()
 	oc = ObjectContainer()
 	
 	# Clear the myPathList
@@ -106,7 +108,7 @@ def MainMenu(random=0):
 			paths = section.xpath('Location/@path')
 			Log.Debug("Title of section is %s with a key of %s and a path of : %s" %(title, key, paths))
 			myPathList[key]= ', '.join(paths)
-			oc.add(DirectoryObject(key=Callback(backgroundScan, title=title, sectiontype=sectiontype, key=key, random=time.clock()), title='Look in section "' + title + '"', summary='Look for unmatched files in "' + title + '"'))
+			oc.add(DirectoryObject(key=Callback(backgroundScan, title=title, sectiontype=sectiontype, key=key, random=time.clock()), title='Look in section "' + title + '"', summary='Look for missing files in "' + title + '"'))
 	except:
 		Log.Critical("Exception happened in MainMenu")
 		raise
@@ -115,42 +117,23 @@ def MainMenu(random=0):
 	return oc
 
 ####################################################################################################
-# Get user settings, and if not existing, get the defaults
-####################################################################################################
-#CSK
-#@route(PREFIX + '/getPrefs')
-#def getPrefs():
-#	Log.Debug("*********  Starting to get User Prefs  ***************")
-#	global host
-#	host = Prefs['host']
-#	if host.find(':') == -1:
-#		host += ':32400'
-#	global PMS_URL
-#	PMS_URL = 'http://%s/library/sections/' %(host)
-#	Log.Debug("PMS_URL is : %s" %(PMS_URL))
-#	Log.Debug("*********  Ending get User Prefs  ***************")
-#	return
-
-####################################################################################################
 # Called by the framework every time a user changes the prefs
 ####################################################################################################
 @route(PREFIX + '/ValidatePrefs')
 def ValidatePrefs():
-#	if Prefs['NukeToken']:
-		# My master wants to nuke the local store
-#		Log.Debug('Removing Token from local storage')
-#		Dict['authentication_token'] = 'NuKeMe'
-#		Dict.Save()
-	# Lets get the token again, in case credentials are switched, or token is deleted
-	global MYHEADER
-	MYHEADER['X-Plex-Token'] = getToken()
 	if Prefs['NukeToken']:
+		# My master wants to nuke the local store
+		Log.Debug('Removing Token from local storage')
+		Dict['authentication_token'] = 'NuKeMe'
+		Dict.Save()
 		Log.Debug('Resetting flag to nuke token')
 		# My master has nuked the local store, so reset the prefs flag
 		myHTTPPrefix = 'http://127.0.0.1:32400/:/plugins/com.plexapp.plugins.findUnmatch/prefs/'
 		myURL = myHTTPPrefix + 'set?NukeToken=0'
 		Log.Debug('Prefs Sending : ' + myURL)
 		HTTP.Request(myURL, immediate=True, headers=MYHEADER)
+		# Get new token
+		getToken()
 	# If the host pref is missing the port, add it.
 	if Prefs['host'].find(':') == -1:
 		host = Prefs['host'] + ':32400'
@@ -196,7 +179,7 @@ def results(title):
 			title = title[:-1]
 		title = str(counter) + ": " + title
 		counter += 1
-		oc2.add(DirectoryObject(key=Callback(MainMenu, random=time.clock()), title=title, summary="Unmatched file: \n\n"+title2))
+		oc2.add(DirectoryObject(key=Callback(MainMenu, random=time.clock()), title=title, summary="Missing file: \n\n"+title2))
 
 	# Reset the scanner status
 	bScanStatus = 0
@@ -224,7 +207,7 @@ def scanMovieDB(myMediaURL):
 				filename = urllib.unquote(myTmpPath).decode('utf8')
 				composed_filename = unicodedata.normalize('NFKC', filename)
 				bScanStatusCount += 1
-				if os.path.exists(filename):
+				if os.path.exists(filename.encode('utf8')):
 					Log.Debug("Media #%s from database: '%s' exists with a path of: %s" %(bScanStatusCount, title, composed_filename))
 				else:
 					Log.Debug("Media #%s from database: '%s' is missing with a path of: %s" %(bScanStatusCount, title, composed_filename))
@@ -262,7 +245,7 @@ def scanPhotoDB(myMediaURL):
 
 		# Scan all dirs for more dir keys
 		for key in dirKeys:
-			myURL = "http://" + host + "/library/metadata/" + key + "/children"
+			myURL = "http://" + Prefs['host'] + "/library/metadata/" + key + "/children"
 			myMedias2 = XML.ElementFromURL(myURL, headers=MYHEADER).xpath('//Directory')
 			for myMedia2 in myMedias2:
 				ratingKey = myMedia2.get("ratingKey")
@@ -283,7 +266,7 @@ def scanPhotoDB(myMediaURL):
 				bScanStatusFileCount += 1
 				filename = urllib.unquote(myTmpPath).decode('utf8')
 				composed_filename = unicodedata.normalize('NFKC', filename)
-				if os.path.exists(filename):
+				if os.path.exists(filename.encode('utf8')):
 					Log.Debug("Media #%s exists with a path of: %s" %(bScanStatusFileCount, composed_filename))
 				else:
 					Log.Debug("Media #%s is missing with a path of: %s" %(bScanStatusFileCount, composed_filename))
@@ -292,7 +275,7 @@ def scanPhotoDB(myMediaURL):
 		# Scan photos in sub folders
 		for key in dirKeys:
 			bScanStatusCount += 1
-			myURL = "http://" + host + "/library/metadata/" + key + "/children"
+			myURL = "http://" + Prefs['host'] + "/library/metadata/" + key + "/children"
 			myMedias = XML.ElementFromURL(myURL, headers=MYHEADER).xpath('//Photo')
 			for myMedia in myMedias:
 				myTmpPaths = (',,,'.join(myMedia.xpath('Media/Part/@file')).split(',,,'))
@@ -300,7 +283,7 @@ def scanPhotoDB(myMediaURL):
 					bScanStatusFileCount += 1
 					filename = urllib.unquote(myTmpPath).decode('utf8')
 					composed_filename = unicodedata.normalize('NFKC', filename)
-					if os.path.exists(filename):
+					if os.path.exists(filename.encode('utf8')):
 						Log.Debug("Media #%s exists with a path of: %s" %(bScanStatusFileCount, composed_filename))
 					else:
 						Log.Debug("Media #%s is missing with a path of: %s" %(bScanStatusFileCount, composed_filename))
@@ -331,7 +314,7 @@ def scanShowDB(myMediaURL):
 		for myMedia in myMedias:
 			bScanStatusCount += 1
 			ratingKey = myMedia.get("ratingKey")
-			myURL = "http://" + host + "/library/metadata/" + ratingKey + "/allLeaves"
+			myURL = "http://" + Prefs['host'] + "/library/metadata/" + ratingKey + "/allLeaves"
 			Log.Debug("Show %s of %s with a RatingKey of %s at myURL: %s" %(bScanStatusCount, bScanStatusCountOf, ratingKey, myURL))
 			myMedias2 = XML.ElementFromURL(myURL, headers=MYHEADER).xpath('//Video')
 			for myMedia2 in myMedias2:
@@ -341,7 +324,7 @@ def scanShowDB(myMediaURL):
 				for myFilePath2 in myFilePath:
 					filename = urllib.unquote(myFilePath2).decode('utf8')
 					composed_filename = unicodedata.normalize('NFKC', filename)
-					if os.path.exists(filename):
+					if os.path.exists(filename.encode('utf8')):
 						Log.Debug("Media from database: '%s' exists with a path of: %s" %(title, composed_filename))
 					else:
 						Log.Debug("Media from database: '%s' is missing with a path of: %s" %(title, composed_filename))
@@ -368,7 +351,7 @@ def scanArtistDB(myMediaURL):
 		for myMedia in myMedias:
 			bScanStatusCount += 1
 			ratingKey = myMedia.get("ratingKey")
-			myURL = "http://" + host + "/library/metadata/" + ratingKey + "/allLeaves"
+			myURL = "http://" + Prefs['host'] + "/library/metadata/" + ratingKey + "/allLeaves"
 			Log.Debug("%s of %s with a RatingKey of %s at myURL: %s" %(bScanStatusCount, bScanStatusCountOf, ratingKey, myURL))
 			myMedias2 = XML.ElementFromURL(myURL, headers=MYHEADER).xpath('//Track')
 			for myMedia2 in myMedias2:
@@ -379,7 +362,7 @@ def scanArtistDB(myMediaURL):
 				myFilePath = ',,,'.join(myMedia2.xpath('Media/Part/@file'))
 				filename = urllib.unquote(myFilePath).decode('utf8')
 				composed_filename = unicodedata.normalize('NFKC', filename)
-				if os.path.exists(filename):
+				if os.path.exists(filename.encode('utf8')):
 					Log.Debug("Media from database: '%s' exists with a path of: %s" %(title, composed_filename))
 				else:
 					Log.Debug("Media from database: '%s' is missing with a path of: %s" %(title, composed_filename))
